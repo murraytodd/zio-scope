@@ -2,28 +2,31 @@ package example
 
 import zio._
 
+import java.io.IOException
 import scala.io.{BufferedSource, Source}
 
 object WithScope extends ZIOAppDefault {
 
-  val fileReader: ZIO[Scope, Throwable, BufferedSource] = ZIO.fromAutoCloseable(Task.attempt(Source.fromFile("build.sbt")))
-  val fileReader2: ZIO[Scope, Throwable, BufferedSource] = ZIO.acquireRelease(ZIO.attemptBlockingIO(Source.fromFile("build.sbt")))(s => ZIO.succeed(s.close()))
+  val fileReader: ZIO[Scope, IOException, BufferedSource] = ZIO.fromAutoCloseable(Task.attemptBlockingIO(Source.fromFile("build.sbt")))
+  val fileReader2: ZIO[Scope,IOException, BufferedSource] = ZIO.acquireRelease(ZIO.attemptBlockingIO(Source.fromFile("build.sbt")))(s => ZIO.succeedBlocking(s.close()))
 
-  val fileLayer = fileReader.map(_.getLines()).toLayer
+  val fileLayer: ZLayer[Scope, IOException, Iterator[String]] = fileReader.map(_.getLines()).toLayer
+  val fileLayer2: ZLayer[Any, IOException, Iterator[String]] =
+    ZLayer.fromAcquireRelease(ZIO.attemptBlockingIO(Source.fromFile("build.sbt")))(f => ZIO.succeedBlocking(f.close()))
+      .project(_.getLines())
+  val fileLayer3: ZLayer[Any, IOException, Iterator[String]] = ZLayer.scoped(fileReader.map(_.getLines))
 
-  val countLinesProgram: ZIO[Iterator[String], Throwable, Int] = for {
+  val read: ZIO[Any, IOException, Int] = ZIO.scoped { fileReader.flatMap(f => Task.attemptBlockingIO(f.getLines().size))}
+
+  val countLinesProgram: ZIO[Iterator[String], IOException, Int] = for {
     data <- ZIO.service[Iterator[String]]
-    size <- ZIO.attempt(data.size)
+    size <- ZIO.attemptBlockingIO(data.size)
   } yield size
 
-  override def run: ZIO[Scope, Throwable, Int] = {
-  //  ZIO.scoped {
-      for {
-        data <- fileReader2.flatMap(f => Task.attempt(f.getLines().size))   // fileReader.use(f => Task.attempt(f.getLines().size))
-        data2 <- countLinesProgram.provideLayer(fileLayer)
-        data3 <- countLinesProgram.provideLayer(fileLayer.fresh)
-        _ <- Console.printLine(s"$data, $data2, $data3")
-      } yield data
-  //  }
+  override def run: ZIO[Any, IOException, Int] = {
+    for {
+      data <- ZIO.scoped { countLinesProgram.provideLayer(fileLayer) }
+      _ <- Console.printLine(s"$data")
+    } yield data
   }
 }
