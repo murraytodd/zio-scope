@@ -1,9 +1,10 @@
 ThisBuild / organization := "com.murraywilliams"
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / scalaVersion := "2.13.6"
+ThisBuild / scalacOptions ++= Seq("-deprecation")
 
 lazy val oldVersion = "2.0.0-RC2"
-lazy val newVersion = "2.0.0-RC4"
+lazy val newVersion = "2.0.0-RC6"
 
 lazy val oldzio = (project in file("old"))
   .settings(
